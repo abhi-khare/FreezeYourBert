@@ -1,33 +1,17 @@
 import torch
 from torch import optim
-from torch.utils.data import DataLoader
 import pytorch_lightning as pl
-from transformers import RobertaTokenizerFast
-from scripts.dataset import get_yelp_review_dataset
+from scripts.dataset import get_dataloader
 from scripts.model import TransformerModel
+from arguments import arguments
 
+# setting platform specific params
 torch.set_float32_matmul_precision('medium')
 
+# training arguments
+args = arguments()
 
-class DataModule(pl.LightningDataModule):
-    def __init__(self, args):
-        super().__init__()
-        self.tokenizer = RobertaTokenizerFast.from_pretrained(args.tokenizer)
-
-    def prepare_data(self):
-        self.train_ds, self.val_ds, self.test_ds = get_yelp_review_dataset(self.tokenizer)
-
-    def setup(self, stage: str):
-        pass
-
-    def train_dataloader(self):
-        return DataLoader(self.train_ds, batch_size=32)
-
-    def val_dataloader(self):
-        return DataLoader(self.val_ds, batch_size=32)
-
-    def test_dataloader(self):
-        return DataLoader(self.test_ds, batch_size=32)
+train_ds, val_ds, test_ds, num_class = get_dataloader(args)
 
 
 # define the LightningModule
@@ -65,12 +49,21 @@ class Model(pl.LightningModule):
         return optimizer
 
 
-model = Model(10)
-dl = DataModule(args)
+model = Model(args)
 
-trainer = pl.Trainer(max_epochs=5,
-                     gpus=-1,
-                     precision=16,
-                     default_root_dir="bins/")
+# logger = tb_logger, callbacks = [checkpoint_callback]
 
-trainer.fit(model=model, train_dataloaders=dl)
+trainer = pl.Trainer(
+    gpus=-1,
+    deterministic=args.deterministic,
+    precision=args.precision,
+    max_epochs=args.max_epoch,
+    check_val_every_n_epoch=1,
+    default_root_dir="bins/")
+
+trainer.fit(model=model,
+            train_dataloaders=train_ds,
+            val_dataloaders=val_ds)
+
+trainer.test(model=model,
+             dataloaders=test_ds)
